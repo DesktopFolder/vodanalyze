@@ -7,6 +7,12 @@ END_COL = 0
 START_ROW = 0
 END_ROW = 0
 
+def SAFE_IMREAD(p, *args, **kwargs):
+    from os.path import isfile
+    if not isfile(p):
+        raise RuntimeError(f'FAILED: {p} IS NOT A VALID FILE. IS THE EXTENSION CORRECT?')
+    return cv2.imread(p, *args, **kwargs)
+
 def INIT_DIMENSIONS(width, height):
     global START_COL, START_ROW, END_COL, END_ROW
     START_COL = int((600 / 1920) * width)
@@ -34,17 +40,17 @@ def process_image(img_rgb, template):
     # cv2.imwrite('res{0}.png'.format(count),img_rgb)
 
 def processImage(imgname, search, tag):
-    mainimg = cv2.imread(imgname)
+    mainimg = SAFE_IMREAD(imgname)
     height, width, h = mainimg.shape
     INIT_DIMENSIONS(width, height)
-    template = cv2.imread(search, 0)
+    template = SAFE_IMREAD(search, 0)
     opened, img = process_image(mainimg, template)
     print(f'Opened: {opened}')
     cv2.imwrite('testimage.png',img)
 
-def processVideo(videoname, search, tag):
+def processVideo(videoname, search, tag, guess_offset, no_write):
     vidcap = cv2.VideoCapture(videoname)
-    template = cv2.imread(search,0)  # open template only once
+    template = SAFE_IMREAD(search,0)  # open template only once
     width  = vidcap.get(cv2.CAP_PROP_FRAME_WIDTH)   # float `width`
     height = vidcap.get(cv2.CAP_PROP_FRAME_HEIGHT)  # float `height`
 
@@ -61,16 +67,31 @@ def processVideo(videoname, search, tag):
     INIT_DIMENSIONS(width, height)
     
     fps = vidcap.get(cv2.CAP_PROP_FPS)
-    print('FPS:', fps)
+    print('Original Video FPS:', fps)
+    nf = int(round(fps, 0))
+    if nf not in (30, 60):
+        raise RuntimeError(f'Found bad FPS value: {fps} (normalized to {nf})')
+    if nf == 60:
+        print(f'60FPS video found. NORMALIZING TO 30FPS. SKIPPING EVERY OTHER FRAME.')
+
     fo = 0
     fc = 0
     IN_OPENED=False
     foa = 0
     fca = 0
     f = open(f'output/{tag}.txt', 'w')
+
+    allframes = 0
+    normframes = 0
     while True:
         success, image = vidcap.read()
         if not success: break         # loop and a half construct is useful
+        allframes += 1
+        if fps == 60 and ((allframes % 2) == 0):
+            continue
+        normframes += 1
+        if guess_offset and normframes < 27000:
+            continue
 
         opened, img = process_image(image, template)
         if opened:
@@ -82,7 +103,8 @@ def processVideo(videoname, search, tag):
                 f.write(f'CLOSEDFOR {fca}\n')
                 fca = 0
                 IN_OPENED = True
-                cv2.imwrite(f'output/{tag}{fo+fc}.png', img)
+                if not no_write:
+                    cv2.imwrite(f'output/{tag}{fo+fc}.png', img)
         else:
             fc += 1 # total frames closed
             fca += 1 # adjacent frames closed
@@ -91,7 +113,8 @@ def processVideo(videoname, search, tag):
                 f.write(f'OPENEDFOR {foa}\n')
                 foa = 0
                 IN_OPENED = False
-                cv2.imwrite(f'output/{tag}{fo+fc}_closed.png', img)
+                if not no_write:
+                    cv2.imwrite(f'output/{tag}{fo+fc}_closed.png', img)
 
         if (fo + fc) % 300 == 0:
             print(f'Processed {fo + fc} frames...')
@@ -99,10 +122,11 @@ def processVideo(videoname, search, tag):
 
 def processArgsVideo():
     import sys
+    args = sys.argv[1:]
     try:
-        VIDEO_PATH = sys.argv[1]
-        SHULKER_NAME_IMAGE_PATH = sys.argv[2]
-        NAME = sys.argv[3]
+        VIDEO_PATH = args[0]
+        SHULKER_NAME_IMAGE_PATH = args[1]
+        NAME = args[2]
     except:
         print('You must provide THREE arguments to this program, in order: PATH_TO_VIDEO, PATH_TO_SHULKER_NAME_IMAGE, NAME')
         print('NAME can be anything you want, e.g. mywr or feinrun.')
@@ -110,7 +134,14 @@ def processArgsVideo():
         sys.exit(1)
     #if not VIDEO_PATH.endswith('.mp4'):
     #    raise RuntimeError(f'Video path {VIDEO_PATH} does not end with mp4?')
-    processVideo(VIDEO_PATH, SHULKER_NAME_IMAGE_PATH, NAME)
+    NOIMG=False
+    HINTED=True
+    for a in args[3:]:
+        if a.lower() == 'noimg':
+            NOIMG=True
+        elif a.lower() == 'nohint':
+            HINTED=False
+    processVideo(VIDEO_PATH, SHULKER_NAME_IMAGE_PATH, NAME, guess_offset=HINTED, no_write=NOIMG)
 
 if __name__ == "__main__":
     processArgsVideo()
