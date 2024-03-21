@@ -10,7 +10,7 @@ END_ROW = 0
 def SAFE_IMREAD(p, *args, **kwargs):
     from os.path import isfile
     if not isfile(p):
-        raise RuntimeError(f'FAILED: {p} IS NOT A VALID FILE. IS THE EXTENSION CORRECT?')
+        raise RuntimeError(f'FAILED: {p} IS NOT A VALID FILE (IT DOES NOT EXIST) (I DO HATE TO BREAK THIS TO YOU). IS THE EXTENSION CORRECT? DID YOU PROVIDE A DIRECTORY PREFIX?')
     return cv2.imread(p, *args, **kwargs)
 
 def INIT_DIMENSIONS(width, height):
@@ -80,6 +80,9 @@ def processVideo(videoname, search, tag, guess_offset, no_write):
     foa = 0
     fca = 0
     f = open(f'output/{tag}.txt', 'w')
+
+    if guess_offset:
+        print(f'GUESSING OFFSET OF 27000 FRAMES (15 MINUTES). SKIPPING FRAMES UNTIL FRAME 27000.')
 
     allframes = 0
     normframes = 0
