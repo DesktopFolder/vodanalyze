@@ -97,6 +97,22 @@ def processVideo(videoname, search, tag):
             print(f'Processed {fo + fc} frames...')
     print(f'Open frames: {fo} / Closed frames: {fc}')
 
+def processArgsVideo():
+    import sys
+    try:
+        VIDEO_PATH = sys.argv[1]
+        SHULKER_NAME_IMAGE_PATH = sys.argv[2]
+        NAME = sys.argv[3]
+    except:
+        print('You must provide THREE arguments to this program, in order: PATH_TO_VIDEO, PATH_TO_SHULKER_NAME_IMAGE, NAME')
+        print('NAME can be anything you want, e.g. mywr or feinrun.')
+        print('Example: python analyze.py ./fein-wr.mp4 resources/fein-v0.png feinberg-wr')
+        sys.exit(1)
+    #if not VIDEO_PATH.endswith('.mp4'):
+    #    raise RuntimeError(f'Video path {VIDEO_PATH} does not end with mp4?')
+    processVideo(VIDEO_PATH, SHULKER_NAME_IMAGE_PATH, NAME)
+
 if __name__ == "__main__":
-    processVideo('./fein-wr-2_24.mp4', 'resources/fein-wr1.png', 'fein-wr1')
+    processArgsVideo()
+    # processVideo('./fein-wr-2_24.mp4', 'resources/fein-wr1.png', 'fein-wr1')
     # processImage('resources/fein-snap.png', 'resources/fein-wr1.png', 'test')
