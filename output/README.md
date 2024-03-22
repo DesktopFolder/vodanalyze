@@ -1,0 +1,1 @@
+This is just a file to check in this folder. This folder will contain screenshots unless you provide the argument NOIMG.
