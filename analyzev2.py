@@ -7,29 +7,38 @@ END_COL = 0
 START_ROW = 0
 END_ROW = 0
 
+WIDTH=None
+HEIGHT=None
+
 def SAFE_IMREAD(p, *args, **kwargs):
     from os.path import isfile
     if not isfile(p):
         raise RuntimeError(f'FAILED: {p} IS NOT A VALID FILE (IT DOES NOT EXIST) (I DO HATE TO BREAK THIS TO YOU). IS THE EXTENSION CORRECT? DID YOU PROVIDE A DIRECTORY PREFIX?')
     return cv2.imread(p, *args, **kwargs)
 
-def INIT_DIMENSIONS(width, height):
+def INIT_DIMENSIONS_SCALED(tlx, tly, brx, bry, original='1080p'):
     global START_COL, START_ROW, END_COL, END_ROW
-    START_COL = int((600 / 1920) * width)
-    END_COL = int(width / 2)
+    assert original == '1080p'
 
-    START_ROW = int((200 / 1080) * height)
-    END_ROW = int((450 / 1000) * height)
+    YSCALE = HEIGHT/1080
+    XSCALE = WIDTH/1920
+
+    KINDNESS = 1.22
+
+    START_COL = int(tlx)
+    END_COL = int(brx*XSCALE*KINDNESS)
+
+    START_ROW = int(tly)
+    END_ROW = int(bry*YSCALE*KINDNESS)
     print(f'Initialized dimensions to: ({START_COL}, {START_ROW}), ({END_COL}, {END_ROW})')
 
-def INIT_DIMENSIONS_CRABLE(width, height):
-    global START_COL, START_ROW, END_COL, END_ROW
-    START_COL = int((600 / 1920) * width)
-    END_COL = int(width / 2)
+def INIT_DIMENSIONS_CRABLE_OPEN():
+    # Original Crable (Feinberg only)
+    # INIT_DIMENSIONS(612, 210, 980, 300)
+    INIT_DIMENSIONS_SCALED(612, 210, 980, 300)
 
-    START_ROW = int((200 / 1080) * height)
-    END_ROW = int((450 / 1000) * height)
-    print(f'Initialized dimensions to: ({START_COL}, {START_ROW}), ({END_COL}, {END_ROW})')
+def INIT_DIMENSIONS_CRABLE_AFTER():
+    INIT_DIMENSIONS_SCALED(612, 280, 1104, 364)
 
 def process_image(img_rgb, template):
     # [start_row:end_row, start_col:end_col]
@@ -49,19 +58,22 @@ def process_image(img_rgb, template):
     # cv2.imwrite('res{0}.png'.format(count),img_rgb)
 
 def processImage(imgname, search, tag):
+    global WIDTH, HEIGHT
     mainimg = SAFE_IMREAD(imgname)
-    height, width, h = mainimg.shape
-    INIT_DIMENSIONS(width, height)
+    HEIGHT, WIDTH, h = mainimg.shape
+    INIT_DIMENSIONS_CRABLE_AFTER()
     template = SAFE_IMREAD(search, 0)
     opened, img = process_image(mainimg, template)
     print(f'Opened: {opened}')
     cv2.imwrite('testimage.png',img)
 
-def processVideo(videoname, search, tag, guess_offset, no_write):
+def processVideo(videoname, search_start, search_end, tag, guess_offset, no_write):
+    global WIDTH, HEIGHT
     vidcap = cv2.VideoCapture(videoname)
-    template = SAFE_IMREAD(search,0)  # open template only once
-    width  = vidcap.get(cv2.CAP_PROP_FRAME_WIDTH)   # float `width`
-    height = vidcap.get(cv2.CAP_PROP_FRAME_HEIGHT)  # float `height`
+    opened_menu = SAFE_IMREAD(search_start,0)  # open template only once
+    check_after = SAFE_IMREAD(search_end,0)  # open template only once
+    WIDTH  = vidcap.get(cv2.CAP_PROP_FRAME_WIDTH)   # float `width`
+    HEIGHT = vidcap.get(cv2.CAP_PROP_FRAME_HEIGHT)  # float `height`
 
     """
     1920x1080 monitor + gui 4:
@@ -73,7 +85,7 @@ def processVideo(videoname, search, tag, guess_offset, no_write):
         Y = 288
     """
 
-    INIT_DIMENSIONS(width, height)
+    INIT_DIMENSIONS_CRABLE_OPEN()
     
     fps = vidcap.get(cv2.CAP_PROP_FPS)
     print('Original Video FPS:', fps)
@@ -88,10 +100,10 @@ def processVideo(videoname, search, tag, guess_offset, no_write):
     IN_OPENED=False
     foa = 0
     fca = 0
-    f = open(f'output/{tag}.txt', 'w')
+    f = open(f'output-v2/{tag}.txt', 'w')
 
-    if guess_offset:
-        print(f'GUESSING OFFSET OF 27000 FRAMES (15 MINUTES). SKIPPING FRAMES UNTIL FRAME 27000.')
+    #if guess_offset:
+    #    print(f'GUESSING OFFSET OF 27000 FRAMES (15 MINUTES). SKIPPING FRAMES UNTIL FRAME 27000.')
 
     allframes = 0
     normframes = 0
@@ -102,16 +114,22 @@ def processVideo(videoname, search, tag, guess_offset, no_write):
         if fps == 60 and ((allframes % 2) == 0):
             continue
         normframes += 1
-        if guess_offset and normframes < 27000:
-            continue
+        #if guess_offset and normframes < 27000:
+        #    continue
 
-        opened, img = process_image(image, template)
+        if IN_OPENED:
+            opened, img = process_image(image, check_after)
+        else:
+            opened, img = process_image(image, opened_menu)
+
         if opened:
             # WE OPENED AN INVENTORY.
             fo += 1 # total fames opened
             foa += 1 # adjacent frames opened
             if not IN_OPENED:
                 print(f'Opened after {fca} frames closed.')
+                # We now need to scan for it closing.
+                INIT_DIMENSIONS_CRABLE_AFTER()
                 f.write(f'_ CLOSEDFOR {fca}\n')
                 fca = 0
                 IN_OPENED = True
@@ -122,6 +140,7 @@ def processVideo(videoname, search, tag, guess_offset, no_write):
             fca += 1 # adjacent frames closed
             if IN_OPENED:
                 print(f'Closed after {foa} frames opened.')
+                INIT_DIMENSIONS_CRABLE_OPEN()
                 f.write(f'^ OPENEDFOR {foa}\n')
                 foa = 0
                 IN_OPENED = False
@@ -137,12 +156,13 @@ def processArgsVideo():
     args = sys.argv[1:]
     try:
         VIDEO_PATH = args[0]
-        SHULKER_NAME_IMAGE_PATH = args[1]
-        NAME = args[2]
+        ACTIVATE_IMAGE = args[1]
+        DEACTIVATE_IMAGE = args[2]
+        NAME = args[3]
     except:
-        print('You must provide THREE arguments to this program, in order: PATH_TO_VIDEO, PATH_TO_SHULKER_NAME_IMAGE, NAME')
+        print('You must provide FOUR arguments to this program, in order: PATH_TO_VIDEO, ACTIVATE_IMAGE, DEACTIVATE_IMAGE, NAME')
         print('NAME can be anything you want, e.g. mywr or feinrun.')
-        print('Example: python analyze.py ./fein-wr.mp4 resources/fein-v0.png feinberg-wr')
+        print('Example: python analyze.py ./fein-wr.mp4 resources/fein-v0activate.png resources/fein-v0deactivate.png feinberg-wr')
         sys.exit(1)
     #if not VIDEO_PATH.endswith('.mp4'):
     #    raise RuntimeError(f'Video path {VIDEO_PATH} does not end with mp4?')
@@ -153,9 +173,11 @@ def processArgsVideo():
             NOIMG=True
         elif a.lower() == 'nohint':
             HINTED=False
-    processVideo(VIDEO_PATH, SHULKER_NAME_IMAGE_PATH, NAME, guess_offset=HINTED, no_write=NOIMG)
+    processVideo(VIDEO_PATH, ACTIVATE_IMAGE, DEACTIVATE_IMAGE, NAME, guess_offset=HINTED, no_write=NOIMG)
 
 if __name__ == "__main__":
     processArgsVideo()
     # processVideo('./fein-wr-2_24.mp4', 'resources/fein-wr1.png', 'fein-wr1')
-    # processImage('resources/fein-snap.png', 'resources/fein-wr1.png', 'test')
+    #processImage('resources/feinberg-ct-v0-src.png', 'resources/feinberg-ct-v0-activate.png', 'test')
+    #processImage('resources/desktop-ct-v0-src-nb.png', 'resources/desktop-ct-v0-activate.png', 'test')
+    #processImage('resources/doypingu-ct-v0-src.png', 'resources/doypingu-ct-v0-activate.png', 'test')
